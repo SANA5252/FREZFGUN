@@ -4,13 +4,13 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// Подключаем базу данных Render через переменную окружения
+// Подключение к базе данных Render
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
-// Создаем таблицу пользователей в базе данных при первом запуске
+// Инициализация таблицы в БД
 const initDb = async () => {
     await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
@@ -20,37 +20,41 @@ const initDb = async () => {
         );
     `);
 };
-initDb().catch(err => console.error("Ошибка инициализации базы:", err));
+initDb().catch(err => console.error("Database init error:", err));
 
-// Маршрут для регистрации и входа (Все в одном, как мы делали в Unity)
+// КОРРЕКТНЫЙ маршрут авторизации и регистрации
 app.post('/auth', async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
-        return res.status(400).json({ status: "error", message: "Заполните все поля!" });
+        return res.status(400).json({ status: "error", message: "Fill all fields!" });
     }
 
     try {
-        // Проверяем, существует ли пользователь
+        // Ищем пользователя в базе данных
         const userRes = await pool.query('SELECT * FROM users WHERE username = \$1', [username]);
 
         if (userRes.rows.length > 0) {
-            // Пользователь найден -> проверяем пароль (Вход)
-            if (userRes.rows[0].password === password) {
-                return res.json({ status: "success", message: "Успешный вход!" });
+            // Пользователь НАЙДЕН -> Получаем данные первой строки [0]
+            const existingUser = userRes.rows[0];
+
+            // Строго проверяем пароль
+            if (existingUser.password === password) {
+                return res.json({ status: "success", message: "Success login!" });
             } else {
-                return res.status(400).json({ status: "error", message: "Неверный пароль или ник занят!" });
+                // Если имя занято и пароль не совпал
+                return res.status(400).json({ status: "error", message: "Username is already taken!" });
             }
         } else {
-            // Пользователя нет -> Регистрируем его
+            // Пользователя НЕТ -> Создаем новый уникальный аккаунт
             await pool.query('INSERT INTO users (username, password) VALUES (\$1, \$2)', [username, password]);
-            return res.json({ status: "success", message: "Аккаунт создан! Нажмите еще раз для входа." });
+            return res.json({ status: "success", message: "Account created! Press Check again to login." });
         }
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ status: "error", message: "Ошибка сервера базы данных." });
+        return res.status(500).json({ status: "error", message: "Server database error." });
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
